@@ -1,105 +1,111 @@
 #!/bin/bash
 # ==========================================
-# Zorin Master Installer v5.2
-# Fully Automated Developer Setup for Zorin OS
+# Zorin Master Installer v5.3
+# Skips already installed apps
 # ==========================================
-set -e  # Stop on any error
+set -e
 
 MASTER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="$HOME/zorin-master-install.log"
 exec > >(tee -i "$LOG_FILE") 2>&1
 
-echo -e "\nZorin Master Installer v5.2 Starting..."
+echo -e "\nZorin Master Installer v5.3 Starting..."
 echo -e "Log saved at: $LOG_FILE\n"
 sleep 2
 
 # ------------------------------------------
 # 1. System Update
 # ------------------------------------------
-echo -e "Updating system packages..."
+echo "Updating system packages..."
 sudo apt update -y
 sudo apt upgrade -y
 
 # ------------------------------------------
 # 2. Install Basic Tools
 # ------------------------------------------
-echo -e "Installing essential tools (curl, git, wget, etc.)..."
+echo "Installing essential tools..."
 sudo apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsof flatpak
 
 # ------------------------------------------
-# 3. Install XAMPP (with Port Check)
+# 3. XAMPP
 # ------------------------------------------
-echo -e "Installing XAMPP (Apache + MySQL + PHP)..."
-if lsof -Pi :80 -sTCP:LISTEN -t >/dev/null || lsof -Pi :443 -sTCP:LISTEN -t >/dev/null; then
-    echo -e "Warning: Port 80 or 443 is in use. XAMPP may fail to start."
-    read -p "Continue anyway? (y/N): " -n 1 -r
-    echo
-    [[ ! $REPLY =~ ^[Yy]$ ]] && echo -e "Installation cancelled by user." && exit 1
+if [ ! -d "/opt/lampp" ]; then
+    echo "Installing XAMPP..."
+    XAMPP_URL="https://www.apachefriends.org/xampp-files/8.2.12/xampp-linux-x64-8.2.12-0-installer.run"
+    wget -q "$XAMPP_URL" -O /tmp/xampp-installer.run
+    chmod +x /tmp/xampp-installer.run
+    sudo /tmp/xampp-installer.run --mode unattended
+    sudo ln -sf /opt/lampp/lampp /usr/local/bin/xampp
+else
+    echo "XAMPP already installed. Skipping..."
 fi
 
-XAMPP_URL="https://www.apachefriends.org/xampp-files/8.2.12/xampp-linux-x64-8.2.12-0-installer.run"
-echo -e "Downloading XAMPP installer..."
-wget -q "$XAMPP_URL" -O /tmp/xampp-installer.run
-chmod +x /tmp/xampp-installer.run
-sudo /tmp/xampp-installer.run --mode unattended
-sudo ln -sf /opt/lampp/lampp /usr/local/bin/xampp
-echo -e "XAMPP installed successfully!"
+# ------------------------------------------
+# 4. Node.js
+# ------------------------------------------
+if ! command -v node >/dev/null 2>&1; then
+    echo "Installing Node.js..."
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+    sudo apt install -y nodejs
+    sudo npm install -g npm@latest
+else
+    echo "Node.js already installed. Skipping..."
+fi
 
 # ------------------------------------------
-# 4. Install Node.js LTS
+# 5. Composer
 # ------------------------------------------
-echo -e "Installing Node.js (LTS) + npm..."
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo npm install -g npm@latest
-echo -e "Node.js & npm installed!"
-
-# ------------------------------------------
-# 5. Install Composer (Securely)
-# ------------------------------------------
-echo -e "Installing Composer (PHP Dependency Manager)..."
-php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-EXPECTED_CHECKSUM="$(curl -s https://composer.github.io/installer.sig)"
-ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
-
-if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
-    echo -e "ERROR: Composer installer corrupted! Aborting." >&2
+if ! command -v composer >/dev/null 2>&1; then
+    echo "Installing Composer..."
+    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+    EXPECTED_CHECKSUM="$(curl -s https://composer.github.io/installer.sig)"
+    ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
+    if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+        echo "Composer installer corrupted! Aborting."
+        rm composer-setup.php
+        exit 1
+    fi
+    php composer-setup.php --install-dir=/usr/local/bin --filename=composer
     rm composer-setup.php
-    exit 1
+else
+    echo "Composer already installed. Skipping..."
 fi
 
-php composer-setup.php --install-dir=/usr/local/bin --filename=composer
-rm composer-setup.php
-echo -e "Composer installed securely!"
+# ------------------------------------------
+# 6. Google Chrome
+# ------------------------------------------
+if ! command -v google-chrome >/dev/null 2>&1; then
+    echo "Installing Google Chrome..."
+    wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb
+    sudo dpkg -i /tmp/chrome.deb || sudo apt -f install -y
+else
+    echo "Chrome already installed. Skipping..."
+fi
 
 # ------------------------------------------
-# 6. Install Google Chrome
+# 7. GitHub Desktop
 # ------------------------------------------
-echo -e "Installing Google Chrome..."
-wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb
-sudo dpkg -i /tmp/chrome.deb || sudo apt -f install -y
-echo -e "Chrome installed!"
+if ! command -v github-desktop >/dev/null 2>&1; then
+    echo "Installing GitHub Desktop..."
+    GITHUB_DESKTOP_URL=$(curl -s https://api.github.com/repos/shiftkey/desktop/releases/latest | grep -o "https.*GitHubDesktop-linux.*deb" | head -1)
+    wget -q "$GITHUB_DESKTOP_URL" -O /tmp/github-desktop.deb
+    sudo dpkg -i /tmp/github-desktop.deb || sudo apt -f install -y
+else
+    echo "GitHub Desktop already installed. Skipping..."
+fi
 
 # ------------------------------------------
-# 7. Install GitHub Desktop (Latest)
+# 8. VS Code
 # ------------------------------------------
-echo -e "Installing GitHub Desktop (Latest Version)..."
-GITHUB_DESKTOP_URL=$(curl -s https://api.github.com/repos/shiftkey/desktop/releases/latest | grep -o "https.*GitHubDesktop-linux.*deb" | head -1)
-wget -q "$GITHUB_DESKTOP_URL" -O /tmp/github-desktop.deb
-sudo dpkg -i /tmp/github-desktop.deb || sudo apt -f install -y
-echo -e "GitHub Desktop installed!"
+if ! command -v code >/dev/null 2>&1; then
+    echo "Installing VS Code..."
+    sudo apt-get install -y wget gpg apt-transport-https
+    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /tmp/microsoft.gpg
+    sudo install -D -o root -g root -m 644 /tmp/microsoft.gpg /usr/share/keyrings/microsoft.gpg
+    rm -f /tmp/microsoft.gpg
 
-# ------------------------------------------
-# 8. Install Visual Studio Code
-# ------------------------------------------
-echo -e "Installing Visual Studio Code via Official APT Repository..."
-sudo apt-get install -y wget gpg apt-transport-https
-wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /tmp/microsoft.gpg
-sudo install -D -o root -g root -m 644 /tmp/microsoft.gpg /usr/share/keyrings/microsoft.gpg
-rm -f /tmp/microsoft.gpg
-
-VSCODE_SOURCES="/etc/apt/sources.list.d/vscode.sources"
-sudo tee "$VSCODE_SOURCES" > /dev/null << EOF
+    VSCODE_SOURCES="/etc/apt/sources.list.d/vscode.sources"
+    sudo tee "$VSCODE_SOURCES" > /dev/null << EOF
 Types: deb
 URIs: https://packages.microsoft.com/repos/code
 Suites: stable
@@ -107,99 +113,106 @@ Components: main
 Architectures: amd64
 Signed-By: /usr/share/keyrings/microsoft.gpg
 EOF
-
-sudo apt update
-sudo apt install -y code || echo "VS Code install failed. Skipping."
-
-# ------------------------------------------
-# 9. Install Windsurf
-# ------------------------------------------
-echo -e "Installing Windsurf via Official APT Repository..."
-WINDSURF_KEY_URL="https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg"
-
-if wget -qO- "$WINDSURF_KEY_URL" | gpg --dearmor > /tmp/windsurf-stable.gpg; then
-    sudo install -D -o root -g root -m 644 /tmp/windsurf-stable.gpg /etc/apt/keyrings/windsurf-stable.gpg
-    rm -f /tmp/windsurf-stable.gpg
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/windsurf-stable.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" | \
-        sudo tee /etc/apt/sources.list.d/windsurf.list > /dev/null
     sudo apt update
-    sudo apt install -y windsurf || echo "Windsurf install failed. Skipping."
+    sudo apt install -y code || echo "VS Code install failed."
 else
-    echo "⚠️ Windsurf key download failed. Skipping Windsurf installation."
+    echo "VS Code already installed. Skipping..."
 fi
 
 # ------------------------------------------
-# 10. Apply VS Code Settings
+# 9. Windsurf
+# ------------------------------------------
+if ! command -v windsurf >/dev/null 2>&1; then
+    echo "Installing Windsurf..."
+    WINDSURF_KEY_URL="https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg"
+    if wget -qO- "$WINDSURF_KEY_URL" | gpg --dearmor > /tmp/windsurf-stable.gpg; then
+        sudo install -D -o root -g root -m 644 /tmp/windsurf-stable.gpg /etc/apt/keyrings/windsurf-stable.gpg
+        rm -f /tmp/windsurf-stable.gpg
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/windsurf-stable.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" | \
+            sudo tee /etc/apt/sources.list.d/windsurf.list > /dev/null
+        sudo apt update
+        sudo apt install -y windsurf || echo "Windsurf install failed."
+    else
+        echo "Windsurf key download failed. Skipping."
+    fi
+else
+    echo "Windsurf already installed. Skipping..."
+fi
+
+# ------------------------------------------
+# 10. uLauncher
+# ------------------------------------------
+if ! command -v ulauncher >/dev/null 2>&1; then
+    echo "Installing uLauncher..."
+    sudo add-apt-repository ppa:agornostal/ulauncher -y
+    sudo apt update -y
+    sudo apt install -y ulauncher
+    mkdir -p ~/.config/autostart
+    cp /usr/share/applications/ulauncher.desktop ~/.config/autostart/
+    sed -i 's/NoDisplay=true/NoDisplay=false/' ~/.config/autostart/ulauncher.desktop
+    echo "X-GNOME-Autostart-enabled=true" >> ~/.config/autostart/ulauncher.desktop
+else
+    echo "uLauncher already installed. Skipping..."
+fi
+
+# ------------------------------------------
+# 11. Kooha
+# ------------------------------------------
+if ! command -v kooha >/dev/null 2>&1; then
+    echo "Installing Kooha..."
+    if ! sudo apt install -y kooha; then
+        echo "Kooha apt failed. Installing via Flatpak..."
+        flatpak install -y flathub io.github.SeerUK.Kooha
+    fi
+else
+    echo "Kooha already installed. Skipping..."
+fi
+
+# ------------------------------------------
+# 12. VS Code & Windsurf Settings
 # ------------------------------------------
 VSCODE_DIR="$MASTER_DIR/vscode"
 if [ -f "$VSCODE_DIR/settings.json" ]; then
     mkdir -p ~/.config/Code/User/
     cp "$VSCODE_DIR/settings.json" ~/.config/Code/User/settings.json
-    echo -e "VS Code settings applied!"
 fi
 
-# ------------------------------------------
-# 11. Apply Windsurf Settings
-# ------------------------------------------
 WINDSURF_DIR="$MASTER_DIR/windsurf"
 if [ -f "$WINDSURF_DIR/settings.json" ]; then
     mkdir -p ~/.config/Windsurf/User/
     cp "$WINDSURF_DIR/settings.json" ~/.config/Windsurf/User/settings.json
-    echo -e "Windsurf settings applied!"
 fi
 
 # ------------------------------------------
-# 12. Install VS Code Extensions
+# 13. Install VS Code Extensions
 # ------------------------------------------
 VSCODE_EXT_FILE="$VSCODE_DIR/extensions.txt"
-if [ -f "$VSCODE_EXT_FILE" ]; then
-    echo -e "Installing VS Code extensions..."
+if [ -f "$VSCODE_EXT_FILE" ] && command -v code >/dev/null 2>&1; then
     while IFS= read -r ext; do
         [[ -z "$ext" || "$ext" =~ ^# ]] && continue
-        code --install-extension "$ext" --force && echo "Installed: $ext"
+        code --install-extension "$ext" --force
     done < "$VSCODE_EXT_FILE"
 fi
 
 # ------------------------------------------
-# 13. Install Windsurf Extensions (if CLI exists)
+# 14. Windsurf Extensions
 # ------------------------------------------
 WINDSURF_EXT_FILE="$WINDSURF_DIR/extensions.txt"
 if [ -f "$WINDSURF_EXT_FILE" ] && command -v windsurf >/dev/null 2>&1; then
-    echo -e "Installing Windsurf extensions..."
     while IFS= read -r ext; do
         [[ -z "$ext" || "$ext" =~ ^# ]] && continue
-        windsurf --install-extension "$ext" --force && echo "Installed: $ext"
+        windsurf --install-extension "$ext" --force
     done < "$WINDSURF_EXT_FILE"
 fi
 
 # ------------------------------------------
-# 14. Install uLauncher + Auto Start
-# ------------------------------------------
-echo -e "Installing uLauncher..."
-sudo add-apt-repository ppa:agornostal/ulauncher -y
-sudo apt update -y
-sudo apt install -y ulauncher
-mkdir -p ~/.config/autostart
-cp /usr/share/applications/ulauncher.desktop ~/.config/autostart/
-sed -i 's/NoDisplay=true/NoDisplay=false/' ~/.config/autostart/ulauncher.desktop
-echo "X-GNOME-Autostart-enabled=true" >> ~/.config/autostart/ulauncher.desktop
-
-# ------------------------------------------
-# 15. Install Kooha (Screen Recorder)
-# ------------------------------------------
-if ! sudo apt install -y kooha; then
-    echo "Kooha apt install failed. Installing via Flatpak..."
-    flatpak install -y flathub io.github.SeerUK.Kooha
-fi
-
-# ------------------------------------------
-# 16. Add Custom Bash Aliases
+# 15. Custom Bash Aliases
 # ------------------------------------------
 BASHRC="$HOME/.bashrc"
 if ! grep -q "Zorin Master Installer" "$BASHRC" 2>/dev/null; then
     cat >> "$BASHRC" << 'EOF'
 
-# === Custom Aliases by Zorin Master Installer v5.2 ===
+# === Custom Aliases by Zorin Master Installer v5.3 ===
 alias xstart='sudo /opt/lampp/lampp start'
 alias xstop='sudo /opt/lampp/lampp stop'
 alias xrestart='sudo /opt/lampp/lampp restart'
@@ -213,13 +226,13 @@ EOF
 fi
 
 # ------------------------------------------
-# 17. Cleanup
+# 16. Cleanup
 # ------------------------------------------
 sudo rm -f /tmp/*.deb /tmp/*.run /tmp/*.gpg
 sudo apt autoremove -y
 sudo apt clean
 
 # ==========================================
-echo -e "\n🎉 Zorin Master Setup v5.2 Completed Successfully!"
+echo -e "\n🎉 Zorin Master Setup v5.3 Completed!"
 echo -e "Log: $LOG_FILE"
 echo -e "Restart terminal or run: source ~/.bashrc"

@@ -11,6 +11,15 @@
 - Auto-starts uLauncher  
 - Full log file (`~/zorin-master-install.log`)  
 
+### Visual Studio Code
+- Installed from **official Microsoft APT repository**
+- Auto-updates with `sudo apt upgrade code`
+- Secure GPG key verification
+
+### Windsurf (AI-Powered IDE)
+- Installed from **official APT repository**
+- Always up-to-date with `sudo apt upgrade`
+- Secure GPG key verification
 ---
 
 ## How to Use
