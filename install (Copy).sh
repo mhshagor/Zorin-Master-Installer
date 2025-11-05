@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# Zorin Master Installer v5.2
+# Zorin Master Installer v5.1
 # Fully Automated Developer Setup for Zorin OS
 # ==========================================
 set -e  # Stop on any error
@@ -9,7 +9,7 @@ MASTER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="$HOME/zorin-master-install.log"
 exec > >(tee -i "$LOG_FILE") 2>&1
 
-echo -e "\nZorin Master Installer v5.2 Starting..."
+echo -e "\nZorin Master Installer v5.1 Starting..."
 echo -e "Log saved at: $LOG_FILE\n"
 sleep 2
 
@@ -24,7 +24,7 @@ sudo apt upgrade -y
 # 2. Install Basic Tools
 # ------------------------------------------
 echo -e "Installing essential tools (curl, git, wget, etc.)..."
-sudo apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsof flatpak
+sudo apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsof
 
 # ------------------------------------------
 # 3. Install XAMPP (with Port Check)
@@ -37,7 +37,7 @@ if lsof -Pi :80 -sTCP:LISTEN -t >/dev/null || lsof -Pi :443 -sTCP:LISTEN -t >/de
     [[ ! $REPLY =~ ^[Yy]$ ]] && echo -e "Installation cancelled by user." && exit 1
 fi
 
-XAMPP_URL="https://www.apachefriends.org/xampp-files/8.2.12/xampp-linux-x64-8.2.12-0-installer.run"
+XAMPP_URL="https://sourceforge.net/projects/xampp/files/XAMPP%20Linux/8.2.12/xampp-linux-x64-8.2.12-0-installer.run/download"
 echo -e "Downloading XAMPP installer..."
 wget -q "$XAMPP_URL" -O /tmp/xampp-installer.run
 chmod +x /tmp/xampp-installer.run
@@ -90,14 +90,21 @@ sudo dpkg -i /tmp/github-desktop.deb || sudo apt -f install -y
 echo -e "GitHub Desktop installed!"
 
 # ------------------------------------------
-# 8. Install Visual Studio Code
+# 8. Install Visual Studio Code (Official APT Repo)
 # ------------------------------------------
 echo -e "Installing Visual Studio Code via Official APT Repository..."
+
+# Install prerequisites
 sudo apt-get install -y wget gpg apt-transport-https
+
+# Add Microsoft GPG key
+echo -e "Adding Microsoft GPG key..."
 wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /tmp/microsoft.gpg
 sudo install -D -o root -g root -m 644 /tmp/microsoft.gpg /usr/share/keyrings/microsoft.gpg
 rm -f /tmp/microsoft.gpg
 
+# Add VS Code repository (using .sources format)
+echo -e "Adding VS Code APT repository..."
 VSCODE_SOURCES="/etc/apt/sources.list.d/vscode.sources"
 sudo tee "$VSCODE_SOURCES" > /dev/null << EOF
 Types: deb
@@ -108,29 +115,55 @@ Architectures: amd64
 Signed-By: /usr/share/keyrings/microsoft.gpg
 EOF
 
-sudo apt update
-sudo apt install -y code || echo "VS Code install failed. Skipping."
+# Enable auto-add repo (non-interactive)
+echo "code code/add-microsoft-repo boolean true" | sudo debconf-set-selections
 
+# Update and install
+echo -e "Updating package list and installing VS Code..."
+sudo apt update
+sudo apt install -y code || {
+    echo -e "VS Code installation failed. Skipping."
+}
+
+if command -v code >/dev/null 2>&1; then
+    echo -e "Visual Studio Code installed successfully via APT!"
+else
+    echo -e "VS Code not found after installation."
+fi
 # ------------------------------------------
-# 9. Install Windsurf
+# 9. Install Windsurf (Official APT Repo)
 # ------------------------------------------
 echo -e "Installing Windsurf via Official APT Repository..."
-WINDSURF_KEY_URL="https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg"
+sudo apt-get install -y wget gpg apt-transport-https
 
-if wget -qO- "$WINDSURF_KEY_URL" | gpg --dearmor > /tmp/windsurf-stable.gpg; then
-    sudo install -D -o root -g root -m 644 /tmp/windsurf-stable.gpg /etc/apt/keyrings/windsurf-stable.gpg
-    rm -f /tmp/windsurf-stable.gpg
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/windsurf-stable.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" | \
-        sudo tee /etc/apt/sources.list.d/windsurf.list > /dev/null
-    sudo apt update
-    sudo apt install -y windsurf || echo "Windsurf install failed. Skipping."
+# Add GPG Key
+echo -e "Adding Windsurf GPG key..."
+wget -qO- "https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg" | gpg --dearmor > /tmp/windsurf-stable.gpg
+sudo install -D -o root -g root -m 644 /tmp/windsurf-stable.gpg /etc/apt/keyrings/windsurf-stable.gpg
+rm -f /tmp/windsurf-stable.gpg
+
+# Add Repository
+echo -e "Adding Windsurf APT repository..."
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/windsurf-stable.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" | \
+    sudo tee /etc/apt/sources.list.d/windsurf.list > /dev/null
+
+# Update & Install
+echo -e "Updating package list and installing Windsurf..."
+sudo apt update
+sudo apt install -y windsurf || {
+    echo -e "Windsurf installation failed. Skipping."
+}
+
+if command -v windsurf >/dev/null 2>&1; then
+    echo -e "Windsurf installed successfully via APT!"
 else
-    echo "⚠️ Windsurf key download failed. Skipping Windsurf installation."
+    echo -e "Windsurf CLI not found after install."
 fi
 
 # ------------------------------------------
 # 10. Apply VS Code Settings
 # ------------------------------------------
+echo -e "Applying your VS Code settings..."
 VSCODE_DIR="$MASTER_DIR/vscode"
 if [ -f "$VSCODE_DIR/settings.json" ]; then
     mkdir -p ~/.config/Code/User/
@@ -141,6 +174,7 @@ fi
 # ------------------------------------------
 # 11. Apply Windsurf Settings
 # ------------------------------------------
+echo -e "Applying Windsurf settings..."
 WINDSURF_DIR="$MASTER_DIR/windsurf"
 if [ -f "$WINDSURF_DIR/settings.json" ]; then
     mkdir -p ~/.config/Windsurf/User/
@@ -156,8 +190,9 @@ if [ -f "$VSCODE_EXT_FILE" ]; then
     echo -e "Installing VS Code extensions..."
     while IFS= read -r ext; do
         [[ -z "$ext" || "$ext" =~ ^# ]] && continue
-        code --install-extension "$ext" --force && echo "Installed: $ext"
+        code --install-extension "$ext" --force && echo -e "Installed: $ext"
     done < "$VSCODE_EXT_FILE"
+    echo -e "All VS Code extensions installed!"
 fi
 
 # ------------------------------------------
@@ -168,38 +203,44 @@ if [ -f "$WINDSURF_EXT_FILE" ] && command -v windsurf >/dev/null 2>&1; then
     echo -e "Installing Windsurf extensions..."
     while IFS= read -r ext; do
         [[ -z "$ext" || "$ext" =~ ^# ]] && continue
-        windsurf --install-extension "$ext" --force && echo "Installed: $ext"
+        windsurf --install-extension "$ext" --force && echo -e "Installed: $ext"
     done < "$WINDSURF_EXT_FILE"
+    echo -e "Windsurf extensions installed!"
+else
+    [ -f "$WINDSURF_EXT_FILE" ] && echo -e "Windsurf CLI not found. Skipping extensions."
 fi
 
 # ------------------------------------------
 # 14. Install uLauncher + Auto Start
 # ------------------------------------------
-echo -e "Installing uLauncher..."
+echo -e "Installing uLauncher (App Launcher)..."
 sudo add-apt-repository ppa:agornostal/ulauncher -y
 sudo apt update -y
 sudo apt install -y ulauncher
+
+# Enable Auto Start
 mkdir -p ~/.config/autostart
 cp /usr/share/applications/ulauncher.desktop ~/.config/autostart/
 sed -i 's/NoDisplay=true/NoDisplay=false/' ~/.config/autostart/ulauncher.desktop
 echo "X-GNOME-Autostart-enabled=true" >> ~/.config/autostart/ulauncher.desktop
+echo -e "uLauncher installed & set to start on boot!"
 
 # ------------------------------------------
 # 15. Install Kooha (Screen Recorder)
 # ------------------------------------------
-if ! sudo apt install -y kooha; then
-    echo "Kooha apt install failed. Installing via Flatpak..."
-    flatpak install -y flathub io.github.SeerUK.Kooha
-fi
+echo -e "Installing Kooha (Screen Recorder)..."
+sudo apt install -y kooha
+echo -e "Kooha installed!"
 
 # ------------------------------------------
 # 16. Add Custom Bash Aliases
 # ------------------------------------------
+echo -e "Adding useful terminal shortcuts (aliases)..."
 BASHRC="$HOME/.bashrc"
 if ! grep -q "Zorin Master Installer" "$BASHRC" 2>/dev/null; then
     cat >> "$BASHRC" << 'EOF'
 
-# === Custom Aliases by Zorin Master Installer v5.2 ===
+# === Custom Aliases by Zorin Master Installer v5.1 ===
 alias xstart='sudo /opt/lampp/lampp start'
 alias xstop='sudo /opt/lampp/lampp stop'
 alias xrestart='sudo /opt/lampp/lampp restart'
@@ -210,16 +251,21 @@ alias artisan='php artisan'
 alias npmrun='npm run dev'
 # ================================================
 EOF
+    echo -e "Aliases added! Run: source ~/.bashrc"
 fi
 
 # ------------------------------------------
 # 17. Cleanup
 # ------------------------------------------
-sudo rm -f /tmp/*.deb /tmp/*.run /tmp/*.gpg
+echo -e "Cleaning up temporary files..."
+sudo rm -f /tmp/*.deb /tmp/*.run /tmp/packages.microsoft.gpg
 sudo apt autoremove -y
 sudo apt clean
 
 # ==========================================
-echo -e "\n🎉 Zorin Master Setup v5.2 Completed Successfully!"
+# Final Message
+# ==========================================
+echo -e "\nZorin Master Setup v5.1 Completed Successfully!"
 echo -e "Log: $LOG_FILE"
 echo -e "Restart terminal or run: source ~/.bashrc"
+echo -e "Enjoy your powerful dev environment!\n"
