@@ -16,7 +16,7 @@
 ## How to Use
 
 ```bash
-git clone https://github.com/ZorinMaster/Zorin-Master-Installer.git
+git clone https://github.com/mhshagor/Zorin-Master-Installer.git
 cd Zorin-Master-Installer
 chmod +x install.sh
 ./install.sh
