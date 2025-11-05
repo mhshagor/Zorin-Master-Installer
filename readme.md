@@ -1,2 +1,22 @@
-# Zorin-Master-Installer
- Developer Apps Instailler For Linux
+# Zorin Master Installer v5.1  
+**One-Click Developer Setup for Zorin OS**
+
+---
+
+## Features
+- Updates system  
+- Installs XAMPP, Node.js, Composer, Chrome, VS Code, Windsurf  
+- Applies your settings & extensions  
+- Adds powerful terminal aliases  
+- Auto-starts uLauncher  
+- Full log file (`~/zorin-master-install.log`)  
+
+---
+
+## How to Use
+
+```bash
+git clone https://github.com/ZorinMaster/Zorin-Master-Installer.git
+cd Zorin-Master-Installer
+chmod +x install.sh
+./install.sh
