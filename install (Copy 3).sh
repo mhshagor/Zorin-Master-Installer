@@ -140,42 +140,17 @@ else
 fi
 
 # ------------------------------------------
-# 10. uLauncher (Only extensions from Shagor's setup)
+# 10. uLauncher
 # ------------------------------------------
 if ! command -v ulauncher >/dev/null 2>&1; then
     echo "Installing uLauncher..."
     sudo add-apt-repository ppa:agornostal/ulauncher -y
     sudo apt update -y
     sudo apt install -y ulauncher
-
-    # Enable auto-start
     mkdir -p ~/.config/autostart
     cp /usr/share/applications/ulauncher.desktop ~/.config/autostart/
     sed -i 's/NoDisplay=true/NoDisplay=false/' ~/.config/autostart/ulauncher.desktop
     echo "X-GNOME-Autostart-enabled=true" >> ~/.config/autostart/ulauncher.desktop
-
-    # Install only your shown extensions
-    echo "Installing your Ulauncher extensions..."
-    mkdir -p ~/.config/ulauncher/extensions
-
-    declare -A EXTENSIONS=(
-        ["file-search"]="https://github.com/brpaz/ulauncher-file-search.git"
-        ["smart-url-opener"]="https://github.com/Ulauncher/ulauncher-smart-url-opener.git"
-        ["workspaces"]="https://github.com/brpaz/ulauncher-workspaces.git"
-        ["fontawesome-icon-search"]="https://github.com/iboyperson/ulauncher-fontawesome-icon-search.git"
-    )
-
-    for name in "${!EXTENSIONS[@]}"; do
-        ext_dir="$HOME/.config/ulauncher/extensions/$name"
-        if [ ! -d "$ext_dir" ]; then
-            echo "Installing $name extension..."
-            git clone --depth=1 "${EXTENSIONS[$name]}" "$ext_dir"
-        else
-            echo "$name extension already installed. Skipping..."
-        fi
-    done
-
-    echo "✅ uLauncher and your selected extensions installed successfully!"
 else
     echo "uLauncher already installed. Skipping..."
 fi
