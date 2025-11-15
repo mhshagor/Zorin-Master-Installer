@@ -1,0 +1,12 @@
+blur-my-shell@aunetx
+clipboard-history@alexsaveau.dev
+dash2dock-lite@icedman.github.com
+dynamic-panel@velhlkj.com
+gnome-ui-tune@itstime.tech
+openai-shortcuts@venatum.com
+php-laravel-valet@rahulhaque
+space-bar@luchrioh
+suru@ryusufe.github.io
+uppercase-language-indicator@buffersolve
+Vitals@CoreCoding.com
+volumeBoosr@octane-laurel

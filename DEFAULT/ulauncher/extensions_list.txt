@@ -1,0 +1,4 @@
+com.github.brpaz.ulauncher-file-search
+com.github.kcoovi.ulauncher-link-opener
+com.github.lazypolymath.ulauncher-fontawesome
+com.github.ojos.ulauncher-workspaces

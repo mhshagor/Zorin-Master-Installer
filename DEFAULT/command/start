@@ -1,0 +1,85 @@
+#!/bin/bash
+# File: /home/shagor/command/start
+
+# ============================================
+#  Laravel Auto Starter + XAMPP Boot Script
+# ============================================
+
+# -------------------------------
+# Step 0: Detect current directory
+# -------------------------------
+PROJECT_PATH="$PWD"
+PROJECT_NAME=$(basename "$PWD")
+HOST_NAME="$PROJECT_NAME.test"
+
+echo "📁 Project: $PROJECT_NAME"
+echo "📂 Path: $PROJECT_PATH"
+echo "🌐 Host: $HOST_NAME"
+echo ""
+
+# -------------------------------
+# Step 1: Check if XAMPP is running
+# -------------------------------
+APACHE_RUNNING=$(ps aux | grep '/opt/lampp/bin/httpd' | grep -v grep)
+
+if [ -z "$APACHE_RUNNING" ]; then
+    #echo "🟡 XAMPP is not running..."
+    echo "🕔 Starting XAMPP in 2 seconds..."
+    for i in {2..1}; do
+        echo -ne "⏳ Launching in $i seconds...\r"
+        sleep 1
+    done
+    echo ""
+    echo "🚀 Launching XAMPP..."
+    sudo /opt/lampp/lampp start
+    echo "✅ XAMPP started successfully!"
+else
+    echo "✅ XAMPP already running, skipping..."
+fi
+
+# -------------------------------
+# Step 2: Confirm project folder exists
+# -------------------------------
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "❌ Current directory '$PROJECT_PATH' does not exist!"
+    exit 1
+fi
+cd "$PROJECT_PATH" || exit
+
+# -------------------------------
+# Step 3: Add host entry if not exists
+# -------------------------------
+if ! grep -q "$HOST_NAME" /etc/hosts; then
+    echo "🔹 Adding $HOST_NAME to /etc/hosts..."
+    echo "127.0.0.1   $HOST_NAME" | sudo tee -a /etc/hosts
+else
+    echo "✅ Host '$HOST_NAME' already exists in /etc/hosts."
+fi
+
+# -------------------------------
+# Step 4: Start Laravel server
+# -------------------------------
+echo ""
+echo "🟢 Preparing to start Laravel server..."
+
+PORT=8000
+# Check if port is already in use
+while lsof -i:$PORT >/dev/null 2>&1; do
+    echo "⚠️  Port $PORT is busy, trying $((PORT+1))..."
+    PORT=$((PORT+1))
+done
+
+# -------------------------------
+# Countdown before serve
+# -------------------------------
+echo ""
+echo "🕔 Laravel server will start in 5 seconds..."
+for i in {5..1}; do
+    echo -ne "➡️  Starting in $i...\r"
+    sleep 1
+done
+echo ""
+echo "🚀 Starting Laravel server at http://$HOST_NAME:$PORT"
+echo ""
+
+php artisan serve --host=$HOST_NAME --port=$PORT
