@@ -24,6 +24,12 @@ ask_yes_no() {
     [[ "$choice" == "y" || "$choice" == "yes" ]]
 }
 
+# Check if pv (Pipe Viewer) is installed for progress bars
+if ! command -v pv > /dev/null 2>&1; then
+    echo "📦 Installing 'pv' for progress bars..."
+    sudo apt install -y pv > /dev/null 2>&1
+fi
+
 
 if ask_yes_no "Do you want to backup?"; then
     # -------------------------------
@@ -159,17 +165,36 @@ if ask_yes_no "Do you want to backup?"; then
             
             echo "📦 Backing up htdocs (excluding node_modules, vendor, .git)..."
             
-            # Create backup with exclusions
-            sudo tar -czf "$HTDOCS_BACKUP_DIR/htdocs.tar.gz" \
-                -C /opt/lampp \
-                --exclude='htdocs/*/node_modules' \
-                --exclude='htdocs/*/vendor' \
-                --exclude='htdocs/*/.git' \
-                --exclude='htdocs/*/storage/logs/*' \
-                --exclude='htdocs/*/storage/framework/cache/*' \
-                --exclude='htdocs/*/storage/framework/sessions/*' \
-                --exclude='htdocs/*/storage/framework/views/*' \
-                htdocs
+            # Calculate size for progress decision
+            HTDOCS_SIZE=$(sudo du -sb /opt/lampp/htdocs 2>/dev/null | cut -f1)
+            HTDOCS_SIZE_MB=$((HTDOCS_SIZE / 1024 / 1024))
+            
+            # Use progress bar only for large backups (>100MB, likely >5 seconds)
+            if [ "$HTDOCS_SIZE_MB" -gt 100 ] && command -v pv > /dev/null 2>&1; then
+                echo "⏳ Large backup detected (${HTDOCS_SIZE_MB}MB), showing progress..."
+                sudo tar -c \
+                    -C /opt/lampp \
+                    --exclude='htdocs/*/node_modules' \
+                    --exclude='htdocs/*/vendor' \
+                    --exclude='htdocs/*/.git' \
+                    --exclude='htdocs/*/storage/logs/*' \
+                    --exclude='htdocs/*/storage/framework/cache/*' \
+                    --exclude='htdocs/*/storage/framework/sessions/*' \
+                    --exclude='htdocs/*/storage/framework/views/*' \
+                    htdocs | pv -s "$HTDOCS_SIZE" -p -t -e -r -b | gzip > "$HTDOCS_BACKUP_DIR/htdocs.tar.gz"
+            else
+                # Quick backup without progress bar
+                sudo tar -czf "$HTDOCS_BACKUP_DIR/htdocs.tar.gz" \
+                    -C /opt/lampp \
+                    --exclude='htdocs/*/node_modules' \
+                    --exclude='htdocs/*/vendor' \
+                    --exclude='htdocs/*/.git' \
+                    --exclude='htdocs/*/storage/logs/*' \
+                    --exclude='htdocs/*/storage/framework/cache/*' \
+                    --exclude='htdocs/*/storage/framework/sessions/*' \
+                    --exclude='htdocs/*/storage/framework/views/*' \
+                    htdocs
+            fi
             
             if [ $? -eq 0 ]; then
                 echo "✅ htdocs backed up successfully"
@@ -279,11 +304,24 @@ EOF
                 
                 # Create a combined backup of all databases
                 echo "📦 Creating combined backup of all databases..."
+                
                 $MYSQLDUMP_CMD --all-databases --add-drop-database --routines --triggers --events \
                     > "$MYSQL_BACKUP_DIR/all_databases.sql" 2>/dev/null
                 
                 if [ $? -eq 0 ]; then
-                    gzip "$MYSQL_BACKUP_DIR/all_databases.sql"
+                    # Check SQL file size for progress decision
+                    SQL_SIZE=$(stat -c%s "$MYSQL_BACKUP_DIR/all_databases.sql")
+                    SQL_SIZE_MB=$((SQL_SIZE / 1024 / 1024))
+                    
+                    # Use progress bar only for large SQL files (>10MB, likely >5 seconds)
+                    if [ "$SQL_SIZE_MB" -gt 10 ] && command -v pv > /dev/null 2>&1; then
+                        echo "⏳ Large database (${SQL_SIZE_MB}MB), compressing with progress..."
+                        pv -s "$SQL_SIZE" -p -t -e -r -b "$MYSQL_BACKUP_DIR/all_databases.sql" | gzip > "$MYSQL_BACKUP_DIR/all_databases.sql.gz"
+                        rm "$MYSQL_BACKUP_DIR/all_databases.sql"
+                    else
+                        # Quick compression without progress bar
+                        gzip "$MYSQL_BACKUP_DIR/all_databases.sql"
+                    fi
                     echo "✅ Combined backup created and compressed"
                 fi
                 
