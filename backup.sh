@@ -145,6 +145,194 @@ if ask_yes_no "Do you want to backup?"; then
         done
 
     fi
+    
+    # -------------------------------
+    # XAMPP htdocs Backup (Smart - excludes heavy folders)
+    # -------------------------------
+    if ask_yes_no "Do you want to backup XAMPP htdocs (projects)?"; then
+        echo "🟢 XAMPP htdocs backup started..."
+        HTDOCS_DIR="/opt/lampp/htdocs"
+        HTDOCS_BACKUP_DIR="$BACKUP_DIR/htdocs"
+        
+        if [ -d "$HTDOCS_DIR" ]; then
+            mkdir -p "$HTDOCS_BACKUP_DIR"
+            
+            echo "📦 Backing up htdocs (excluding node_modules, vendor, .git)..."
+            
+            # Create backup with exclusions
+            sudo tar -czf "$HTDOCS_BACKUP_DIR/htdocs.tar.gz" \
+                -C /opt/lampp \
+                --exclude='htdocs/*/node_modules' \
+                --exclude='htdocs/*/vendor' \
+                --exclude='htdocs/*/.git' \
+                --exclude='htdocs/*/storage/logs/*' \
+                --exclude='htdocs/*/storage/framework/cache/*' \
+                --exclude='htdocs/*/storage/framework/sessions/*' \
+                --exclude='htdocs/*/storage/framework/views/*' \
+                htdocs
+            
+            if [ $? -eq 0 ]; then
+                echo "✅ htdocs backed up successfully"
+                
+                # Create a list of projects
+                ls -1 "$HTDOCS_DIR" > "$HTDOCS_BACKUP_DIR/projects_list.txt"
+                echo "📃 Projects list created"
+                
+                # Create exclusion info file
+                cat > "$HTDOCS_BACKUP_DIR/README.txt" << 'EOF'
+XAMPP htdocs Backup Information
+================================
+
+This backup EXCLUDES the following to save space:
+- node_modules/ (npm dependencies - reinstall with: npm install)
+- vendor/ (composer dependencies - reinstall with: composer install)
+- .git/ (git repository - clone from remote if needed)
+- storage/logs/* (Laravel logs)
+- storage/framework/cache/* (Laravel cache)
+- storage/framework/sessions/* (Laravel sessions)
+- storage/framework/views/* (Laravel compiled views)
+
+To restore:
+1. Extract: sudo tar -xzf htdocs.tar.gz -C /opt/lampp/
+2. Set permissions: sudo chown -R $USER:$USER /opt/lampp/htdocs
+3. For each Laravel project:
+   - Run: composer install
+   - Run: npm install
+   - Run: php artisan key:generate
+   - Run: php artisan migrate
+
+All your source code, .env files, and databases are included!
+EOF
+                echo "📄 README created with restore instructions"
+                
+                # Calculate backup size
+                BACKUP_SIZE=$(du -sh "$HTDOCS_BACKUP_DIR/htdocs.tar.gz" | cut -f1)
+                echo "💾 Backup size: $BACKUP_SIZE"
+            else
+                echo "⚠️ Failed to backup htdocs"
+            fi
+        else
+            echo "⚠️ htdocs directory not found at $HTDOCS_DIR"
+        fi
+    fi
+    
+    # -------------------------------
+    # MySQL Database Backup (All Databases)
+    # -------------------------------
+    if ask_yes_no "Do you want to backup MySQL databases?"; then
+        echo "🟢 MySQL database backup started..."
+        MYSQL_BACKUP_DIR="$BACKUP_DIR/mysql"
+        mkdir -p "$MYSQL_BACKUP_DIR"
+        
+        # Check if MySQL is running
+        if ! sudo /opt/lampp/lampp status | grep -q "MySQL.*running"; then
+            echo "⚠️ MySQL is not running. Starting MySQL..."
+            sudo /opt/lampp/lampp startmysql
+            sleep 3
+        fi
+        
+        # Get MySQL root password
+        echo ""
+        echo "📝 Enter MySQL root password (press Enter if no password):"
+        read -s MYSQL_PASSWORD
+        
+        if [ -z "$MYSQL_PASSWORD" ]; then
+            MYSQL_CMD="/opt/lampp/bin/mysql -u root"
+            MYSQLDUMP_CMD="/opt/lampp/bin/mysqldump -u root"
+        else
+            MYSQL_CMD="/opt/lampp/bin/mysql -u root -p$MYSQL_PASSWORD"
+            MYSQLDUMP_CMD="/opt/lampp/bin/mysqldump -u root -p$MYSQL_PASSWORD"
+        fi
+        
+        # Test MySQL connection
+        if ! $MYSQL_CMD -e "SELECT 1;" > /dev/null 2>&1; then
+            echo "❌ Failed to connect to MySQL. Please check your password."
+        else
+            echo "✅ MySQL connection successful"
+            
+            # Get list of databases (excluding system databases)
+            DATABASES=$($MYSQL_CMD -e "SHOW DATABASES;" | grep -Ev "^(Database|information_schema|performance_schema|mysql|sys|phpmyadmin)$")
+            
+            if [ -z "$DATABASES" ]; then
+                echo "⚠️ No user databases found"
+            else
+                echo "📦 Found databases to backup:"
+                echo "$DATABASES" | sed 's/^/   - /'
+                
+                # Save database list
+                echo "$DATABASES" > "$MYSQL_BACKUP_DIR/databases_list.txt"
+                
+                # Backup each database individually
+                for DB in $DATABASES; do
+                    echo "📦 Backing up database: $DB"
+                    $MYSQLDUMP_CMD --databases "$DB" --add-drop-database --routines --triggers --events \
+                        > "$MYSQL_BACKUP_DIR/${DB}.sql" 2>/dev/null
+                    
+                    if [ $? -eq 0 ]; then
+                        # Compress the SQL file
+                        gzip "$MYSQL_BACKUP_DIR/${DB}.sql"
+                        echo "  ✅ $DB backed up and compressed"
+                    else
+                        echo "  ⚠️ Failed to backup $DB"
+                    fi
+                done
+                
+                # Create a combined backup of all databases
+                echo "📦 Creating combined backup of all databases..."
+                $MYSQLDUMP_CMD --all-databases --add-drop-database --routines --triggers --events \
+                    > "$MYSQL_BACKUP_DIR/all_databases.sql" 2>/dev/null
+                
+                if [ $? -eq 0 ]; then
+                    gzip "$MYSQL_BACKUP_DIR/all_databases.sql"
+                    echo "✅ Combined backup created and compressed"
+                fi
+                
+                # Create restore instructions
+                cat > "$MYSQL_BACKUP_DIR/README.txt" << 'EOF'
+MySQL Database Backup Information
+==================================
+
+This backup includes:
+- Individual database dumps (database_name.sql.gz)
+- Combined backup of all databases (all_databases.sql.gz)
+- List of all databases (databases_list.txt)
+
+To restore:
+
+Option 1: Restore all databases at once
+----------------------------------------
+1. Start MySQL: sudo /opt/lampp/lampp startmysql
+2. Decompress: gunzip all_databases.sql.gz
+3. Import: /opt/lampp/bin/mysql -u root -p < all_databases.sql
+
+Option 2: Restore individual database
+--------------------------------------
+1. Start MySQL: sudo /opt/lampp/lampp startmysql
+2. Decompress: gunzip database_name.sql.gz
+3. Import: /opt/lampp/bin/mysql -u root -p < database_name.sql
+
+Option 3: Restore specific database with new name
+--------------------------------------------------
+1. Decompress: gunzip database_name.sql.gz
+2. Create DB: /opt/lampp/bin/mysql -u root -p -e "CREATE DATABASE new_name;"
+3. Import: /opt/lampp/bin/mysql -u root -p new_name < database_name.sql
+
+Important Notes:
+- All databases include structure, data, triggers, routines, and events
+- Backups are compressed with gzip to save space
+- Always test restore on a development environment first
+EOF
+                
+                echo "📄 README created with restore instructions"
+                
+                # Calculate total backup size
+                TOTAL_SIZE=$(du -sh "$MYSQL_BACKUP_DIR" | cut -f1)
+                echo "💾 Total MySQL backup size: $TOTAL_SIZE"
+                echo "✅ MySQL backup completed successfully!"
+            fi
+        fi
+    fi
+    
     # -------------------------------
     # GNOME Extensions Backup (user + system)
     # -------------------------------

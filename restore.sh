@@ -647,6 +647,7 @@ fi
 #fi
 
 # --------------------------
+# --------------------------
 # 6. Restore XAMPP config
 # --------------------------
 #if ask_yes_no "Restore XAMPP config?"; then
@@ -656,6 +657,165 @@ fi
 #    echo "   ➤ XAMPP config restored"
 #fi
 #fi
+
+# --------------------------
+# Restore XAMPP htdocs
+# --------------------------
+if ask_yes_no "Restore XAMPP htdocs (projects)?"; then
+    if [ -f "$LAST_BACKUP/htdocs/htdocs.tar.gz" ]; then
+        echo "🔄 Restoring htdocs..."
+        
+        # Check if XAMPP is installed
+        if [ ! -d "/opt/lampp" ]; then
+            echo "⚠️ XAMPP not installed. Please install XAMPP first!"
+        else
+            # Extract htdocs
+            sudo tar -xzf "$LAST_BACKUP/htdocs/htdocs.tar.gz" -C /opt/lampp/
+            
+            # Set correct permissions
+            sudo chown -R "$USER:$USER" /opt/lampp/htdocs
+            sudo chmod -R 755 /opt/lampp/htdocs
+            
+            echo "✅ htdocs restored successfully"
+            
+            # Show projects list
+            if [ -f "$LAST_BACKUP/htdocs/projects_list.txt" ]; then
+                echo ""
+                echo "📂 Restored projects:"
+                cat "$LAST_BACKUP/htdocs/projects_list.txt" | sed 's/^/   - /'
+            fi
+            
+            # Show post-restore instructions
+            echo ""
+            echo "⚠️ IMPORTANT: Post-restore steps for Laravel projects:"
+            echo "   1. cd /opt/lampp/htdocs/your-project"
+            echo "   2. composer install"
+            echo "   3. npm install"
+            echo "   4. php artisan key:generate"
+            echo "   5. php artisan migrate"
+            echo ""
+            echo "💡 Tip: Check README.txt in backup for more details"
+        fi
+    else
+        echo "⚠️ No htdocs backup found"
+    fi
+fi
+
+# --------------------------
+# Restore MySQL Databases
+# --------------------------
+if ask_yes_no "Restore MySQL databases?"; then
+    if [ -d "$LAST_BACKUP/mysql" ]; then
+        echo "🔄 Restoring MySQL databases..."
+        
+        # Check if MySQL is installed
+        if [ ! -d "/opt/lampp" ]; then
+            echo "⚠️ XAMPP not installed. Please install XAMPP first!"
+        else
+            # Check if MySQL is running
+            if ! sudo /opt/lampp/lampp status | grep -q "MySQL.*running"; then
+                echo "⚠️ MySQL is not running. Starting MySQL..."
+                sudo /opt/lampp/lampp startmysql
+                sleep 3
+            fi
+            
+            # Get MySQL root password
+            echo ""
+            echo "📝 Enter MySQL root password (press Enter if no password):"
+            read -s MYSQL_PASSWORD
+            
+            if [ -z "$MYSQL_PASSWORD" ]; then
+                MYSQL_CMD="/opt/lampp/bin/mysql -u root"
+            else
+                MYSQL_CMD="/opt/lampp/bin/mysql -u root -p$MYSQL_PASSWORD"
+            fi
+            
+            # Test MySQL connection
+            if ! $MYSQL_CMD -e "SELECT 1;" > /dev/null 2>&1; then
+                echo "❌ Failed to connect to MySQL. Please check your password."
+            else
+                echo "✅ MySQL connection successful"
+                
+                # Show available backups
+                if [ -f "$LAST_BACKUP/mysql/databases_list.txt" ]; then
+                    echo ""
+                    echo "📂 Available database backups:"
+                    cat "$LAST_BACKUP/mysql/databases_list.txt" | sed 's/^/   - /'
+                    echo ""
+                fi
+                
+                # Ask restore option
+                echo "Choose restore option:"
+                echo "1. Restore all databases"
+                echo "2. Restore individual databases"
+                read -p "Enter choice [1-2]: " RESTORE_CHOICE
+                
+                if [ "$RESTORE_CHOICE" = "1" ]; then
+                    # Restore all databases
+                    if [ -f "$LAST_BACKUP/mysql/all_databases.sql.gz" ]; then
+                        echo "📦 Restoring all databases..."
+                        gunzip -c "$LAST_BACKUP/mysql/all_databases.sql.gz" | $MYSQL_CMD
+                        
+                        if [ $? -eq 0 ]; then
+                            echo "✅ All databases restored successfully!"
+                        else
+                            echo "⚠️ Failed to restore databases"
+                        fi
+                    else
+                        echo "⚠️ all_databases.sql.gz not found"
+                    fi
+                    
+                elif [ "$RESTORE_CHOICE" = "2" ]; then
+                    # Restore individual databases
+                    echo ""
+                    echo "Available database files:"
+                    ls -1 "$LAST_BACKUP/mysql"/*.sql.gz 2>/dev/null | xargs -n 1 basename | grep -v "all_databases" | sed 's/.sql.gz$//' | sed 's/^/   - /'
+                    echo ""
+                    read -p "Enter database name to restore (or 'all' for all): " DB_NAME
+                    
+                    if [ "$DB_NAME" = "all" ]; then
+                        # Restore all individual databases
+                        for DB_FILE in "$LAST_BACKUP/mysql"/*.sql.gz; do
+                            if [ -f "$DB_FILE" ] && [[ ! "$DB_FILE" =~ all_databases ]]; then
+                                DB=$(basename "$DB_FILE" .sql.gz)
+                                echo "📦 Restoring database: $DB"
+                                gunzip -c "$DB_FILE" | $MYSQL_CMD
+                                
+                                if [ $? -eq 0 ]; then
+                                    echo "  ✅ $DB restored"
+                                else
+                                    echo "  ⚠️ Failed to restore $DB"
+                                fi
+                            fi
+                        done
+                    else
+                        # Restore specific database
+                        DB_FILE="$LAST_BACKUP/mysql/${DB_NAME}.sql.gz"
+                        if [ -f "$DB_FILE" ]; then
+                            echo "📦 Restoring database: $DB_NAME"
+                            gunzip -c "$DB_FILE" | $MYSQL_CMD
+                            
+                            if [ $? -eq 0 ]; then
+                                echo "✅ Database $DB_NAME restored successfully!"
+                            else
+                                echo "⚠️ Failed to restore $DB_NAME"
+                            fi
+                        else
+                            echo "⚠️ Database backup file not found: ${DB_NAME}.sql.gz"
+                        fi
+                    fi
+                else
+                    echo "⚠️ Invalid choice"
+                fi
+                
+                echo ""
+                echo "💡 Tip: Check README.txt in mysql backup folder for more restore options"
+            fi
+        fi
+    else
+        echo "⚠️ No MySQL backup found"
+    fi
+fi
 
 # ------------------------------------------
 # Restore command folder
