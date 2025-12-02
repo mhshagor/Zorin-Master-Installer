@@ -6,6 +6,7 @@
 set -e
 MASTER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_DIR="$MASTER_DIR/Backup"
+DEFAULT_DIR="$MASTER_DIR/DEFAULT"
 CONF_DIR="$HOME/.config"
 LOG_FILE="$MASTER_DIR/zorin-master-install.log"
 exec > >(tee -i "$LOG_FILE") 2>&1
@@ -41,14 +42,14 @@ if ask_yes_no "Do you want to restore from backup?"; then
 # 1. System Update
 # ------------------------------------------
 echo "Updating system packages..."
-#sudo apt update -y
-#sudo apt upgrade -y
+sudo apt update -y
+sudo apt upgrade -y
 
 # ------------------------------------------
 # 2. Install Basic Tools
 # ------------------------------------------
 echo "Installing essential tools..."
-#sudo apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsof flatpak
+sudo apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsof flatpak
 
 # ------------------------------------------
 # 3. XAMPP
@@ -59,11 +60,11 @@ if ask_yes_no "Install XAMPP?"; then
         echo "Installing XAMPP..."
 
         # Preferred installer: from Backup
-        LOCAL_INSTALLER="$LAST_BACKUP/xampp/xampp-linux-x64-8.2.12-0-installer.run"
+        LOCAL_INSTALLER="$DEFAULT_DIR/xampp/xampp-linux-x64-8.2.12-0-installer.run"
 
         if [ -f "$LOCAL_INSTALLER" ]; then
             echo "📦 Installing XAMPP from backup..."
-            cd "$LAST_BACKUP/xampp"
+            cd "$DEFAULT_DIR/xampp"
             sudo chmod +x xampp-linux-x64-8.2.12-0-installer.run
             sudo ./xampp-linux-x64-8.2.12-0-installer.run
         else
@@ -84,14 +85,14 @@ fi
 # 4. Node.js
 # ------------------------------------------
 if ask_yes_no "Install Node.js?"; then
-if ! command -v node >/dev/null 2>&1; then
-    echo "Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-    sudo apt install -y nodejs
-    sudo npm install -g npm@latest
-else
-    echo "Node.js already installed. Skipping..."
-fi
+    if ! command -v node >/dev/null 2>&1; then
+        echo "Installing Node.js..."
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+        sudo apt install -y nodejs
+        sudo npm install -g npm@latest
+    else
+        echo "Node.js already installed. Skipping..."
+    fi
 fi
 
 # ------------------------------------------
@@ -110,58 +111,72 @@ if ask_yes_no "Install Composer?"; then
 
     if ! command -v composer >/dev/null 2>&1; then
         echo "Installing Composer..."
-        php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-        EXPECTED_CHECKSUM="$(curl -s https://composer.github.io/installer.sig)"
-        ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
-        if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
-            echo "Composer installer corrupted! Aborting."
+
+        LOCAL_COMPOSER="$DEFAULT_DIR/composer/composer-setup.php"
+
+        if [ -f "$LOCAL_COMPOSER" ]; then
+            echo "Installing Composer from backup..."
+            sudo /opt/lampp/bin/php "$LOCAL_COMPOSER" --install-dir=/usr/local/bin --filename=composer
+            echo "✅ Composer installed successfully from backup!"
+        else
+            php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+            EXPECTED_CHECKSUM="$(curl -s https://composer.github.io/installer.sig)"
+            ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
+            if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+                echo "Composer installer corrupted! Aborting."
+                rm composer-setup.php
+                exit 1
+            fi
+            # Use full path to XAMPP PHP with sudo
+            sudo /opt/lampp/bin/php composer-setup.php --install-dir=/usr/local/bin --filename=composer
             rm composer-setup.php
-            exit 1
-        fi
-        # Use full path to XAMPP PHP with sudo
-        sudo /opt/lampp/bin/php composer-setup.php --install-dir=/usr/local/bin --filename=composer
-        rm composer-setup.php
-        echo "✅ Composer installed successfully!"
+            echo "✅ Composer installed successfully!"
+        fi    
     else
         echo "Composer already installed. Skipping..."
     fi
 fi
 
-
-
-
 # ------------------------------------------
 # 6. Google Chrome
 # ------------------------------------------
 if ask_yes_no "Install Google Chrome?"; then
-if ! command -v google-chrome >/dev/null 2>&1; then
-    echo "Installing Google Chrome..."
-    wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb
-    sudo dpkg -i /tmp/chrome.deb || sudo apt -f install -y
-else
-    echo "Chrome already installed. Skipping..."
-fi
+    if ! command -v google-chrome >/dev/null 2>&1; then
+        echo "Installing Google Chrome..."
+
+        LOCAL_CHROME="$DEFAULT_DIR/chrome/google-chrome-stable_current_amd64.deb"
+
+        if [ -f "$LOCAL_CHROME" ]; then
+            echo "Installing Google Chrome from backup..."
+            sudo dpkg -i "$LOCAL_CHROME" || sudo apt -f install -y
+        else
+            wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb
+            sudo dpkg -i /tmp/chrome.deb || sudo apt -f install -y
+        fi
+    else
+        echo "Chrome already installed. Skipping..."
+    fi
 fi
 
 # ------------------------------------------
 # 7. GitHub Desktop
 # ------------------------------------------
 if ask_yes_no "Install GitHub Desktop?"; then
-if ! command -v github-desktop >/dev/null 2>&1; then
-    echo "Installing GitHub Desktop..."
-    GITHUB_DESKTOP_URL=$(curl -s https://api.github.com/repos/shiftkey/desktop/releases/latest | grep -o "https.*GitHubDesktop-linux.*deb" | head -1)
-    wget -q "$GITHUB_DESKTOP_URL" -O /tmp/github-desktop.deb
-    sudo dpkg -i /tmp/github-desktop.deb || sudo apt -f install -y
-else
-    echo "GitHub Desktop already installed. Skipping..."
-fi
+    if ! command -v github-desktop >/dev/null 2>&1; then
+        echo "Installing GitHub Desktop..."
+        GITHUB_DESKTOP_URL=$(curl -s https://api.github.com/repos/shiftkey/desktop/releases/latest | grep -o "https.*GitHubDesktop-linux.*deb" | head -1)
+        wget -q "$GITHUB_DESKTOP_URL" -O /tmp/github-desktop.deb
+        sudo dpkg -i /tmp/github-desktop.deb || sudo apt -f install -y
+    else
+        echo "GitHub Desktop already installed. Skipping..."
+    fi
 fi
 
 # ------------------------------------------
 # 8. VS Code
 # ------------------------------------------
 if ask_yes_no "Install VS Code?"; then
-    LOCAL_VSCODE="$LAST_BACKUP/vscode/code_1.106.3-1764110892_amd64.deb"
+    LOCAL_VSCODE="$DEFAULT_DIR/vscode/code_1.106.3-1764110892_amd64.deb"
 
     if [ -f "$LOCAL_VSCODE" ]; then
         echo "Installing VS Code from backup..."
@@ -178,22 +193,22 @@ fi
 # 9. Windsurf
 # ------------------------------------------
 if ask_yes_no "Install Windsurf?"; then
-if ! command -v windsurf >/dev/null 2>&1; then
-    echo "Installing Windsurf..."
-    WINDSURF_KEY_URL="https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg"
-    if wget -qO- "$WINDSURF_KEY_URL" | gpg --dearmor > /tmp/windsurf-stable.gpg; then
-        sudo install -D -o root -g root -m 644 /tmp/windsurf-stable.gpg /etc/apt/keyrings/windsurf-stable.gpg
-        rm -f /tmp/windsurf-stable.gpg
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/windsurf-stable.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" | \
-            sudo tee /etc/apt/sources.list.d/windsurf.list > /dev/null
-        sudo apt update
-        sudo apt install -y windsurf || echo "Windsurf install failed."
+    if ! command -v windsurf >/dev/null 2>&1; then
+        echo "Installing Windsurf..."
+        WINDSURF_KEY_URL="https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/windsurf.gpg"
+        if wget -qO- "$WINDSURF_KEY_URL" | gpg --dearmor > /tmp/windsurf-stable.gpg; then
+            sudo install -D -o root -g root -m 644 /tmp/windsurf-stable.gpg /etc/apt/keyrings/windsurf-stable.gpg
+            rm -f /tmp/windsurf-stable.gpg
+            echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/windsurf-stable.gpg] https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/apt stable main" | \
+                sudo tee /etc/apt/sources.list.d/windsurf.list > /dev/null
+            sudo apt update
+            sudo apt install -y windsurf || echo "Windsurf install failed."
+        else
+            echo "Windsurf key download failed. Skipping."
+        fi
     else
-        echo "Windsurf key download failed. Skipping."
+        echo "Windsurf already installed. Skipping..."
     fi
-else
-    echo "Windsurf already installed. Skipping..."
-fi
 fi
 
 # ------------------------------------------
@@ -218,22 +233,22 @@ fi
 # 10. uLauncher (installation only)
 # ------------------------------------------
 if ask_yes_no "Install uLauncher?"; then
-if ! command -v ulauncher >/dev/null 2>&1; then
-    echo "Installing uLauncher..."
-    sudo add-apt-repository ppa:agornostal/ulauncher -y
-    sudo apt update -y
-    sudo apt install -y ulauncher
+    if ! command -v ulauncher >/dev/null 2>&1; then
+        echo "Installing uLauncher..."
+        sudo add-apt-repository ppa:agornostal/ulauncher -y
+        sudo apt update -y
+        sudo apt install -y ulauncher
 
-    # Enable auto-start
-    mkdir -p ~/.config/autostart
-    cp /usr/share/applications/ulauncher.desktop ~/.config/autostart/
-    sed -i 's/NoDisplay=true/NoDisplay=false/' ~/.config/autostart/ulauncher.desktop
-    echo "X-GNOME-Autostart-enabled=true" >> ~/.config/autostart/ulauncher.desktop
+        # Enable auto-start
+        mkdir -p ~/.config/autostart
+        cp /usr/share/applications/ulauncher.desktop ~/.config/autostart/
+        sed -i 's/NoDisplay=true/NoDisplay=false/' ~/.config/autostart/ulauncher.desktop
+        echo "X-GNOME-Autostart-enabled=true" >> ~/.config/autostart/ulauncher.desktop
 
-    echo "✅ uLauncher installed!"
-else
-    echo "uLauncher already installed. Skipping..."
-fi
+        echo "✅ uLauncher installed!"
+    else
+        echo "uLauncher already installed. Skipping..."
+    fi
 fi
 
 # ------------------------------------------
@@ -335,7 +350,6 @@ if command -v ulauncher >/dev/null 2>&1; then
     if ask_yes_no "Restore uLauncher?"; then
         echo "🔄 Restoring uLauncher ..."
         src="$LAST_BACKUP/ulauncher"
-        chmod +x "$src"
 
         if [ -d "$src" ]; then
             mkdir -p "$HOME/.local/share/ulauncher"
@@ -364,7 +378,6 @@ if command -v code >/dev/null 2>&1; then
     if ask_yes_no "Restore VSCode?"; then
         echo "🔄 Restoring VSCode ..."
         src="$LAST_BACKUP/vscode"
-        chmod +x "$src"
 
         if [ -d "$src" ]; then
             mkdir -p "$HOME/.config/Code/User"
@@ -395,7 +408,6 @@ if command -v windsurf >/dev/null 2>&1; then
     if ask_yes_no "Restore Windsurf?"; then
         echo "🔄 Restoring Windsurf ..."
         src="$LAST_BACKUP/windsurf"
-        chmod +x "$src"
 
         if [ -d "$src" ]; then
             mkdir -p "$HOME/.config/Windsurf/User"
@@ -418,9 +430,38 @@ if command -v windsurf >/dev/null 2>&1; then
 fi
 
 # --------------------------
+# Restore Antigravity
+# --------------------------
+if command -v antigravity >/dev/null 2>&1; then
+    #restore_app "antigravity" "$HOME/.config/Antigravity/User" "$HOME/.antigravity"
+
+    if ask_yes_no "Restore Antigravity?"; then
+        echo "🔄 Restoring Antigravity ..."
+        src="$LAST_BACKUP/antigravity"
+
+        if [ -d "$src" ]; then
+            mkdir -p "$HOME/.config/Antigravity/User"
+            cp -r "$src/settings.json" "$HOME/.config/Antigravity/User/"
+            cp -r "$src/keybindings.json" "$HOME/.config/Antigravity/User/"
+            echo "   ➤ Config files restored"
+        fi
+
+        if [ -f "$src/extensions.tar.gz" ]; then
+            mkdir -p "$HOME/.antigravity/extensions"
+            tar -xzf "$src/extensions.tar.gz" -C "$HOME/.antigravity/extensions"
+            echo "   ➤ Extensions restored"
+        fi
+
+        # Ensure correct ownership for user
+        sudo chown -R "$USER:$USER" "$HOME/.config/Antigravity/User"
+        sudo chown -R "$USER:$USER" "$HOME/.antigravity"
+        echo "   ➤ Ownership set to $USER"
+    fi
+fi
+
+# --------------------------
 # Restore GNOME Extensions
 # --------------------------
-
 if ask_yes_no "Restore GNOME Extensions?"; then
     if [ -d "$LAST_BACKUP/gnome-extensions" ]; then
         mkdir -p "$HOME/.local/share/gnome-shell/extensions"
@@ -429,6 +470,168 @@ if ask_yes_no "Restore GNOME Extensions?"; then
         echo "🧩 GNOME Extensions restored"
     else
         echo "No backup found for GNOME Extensions"
+    fi
+fi
+
+# --------------------------
+# Restore Chrome
+# --------------------------
+if ask_yes_no "Restore Chrome (extensions + user data)?"; then
+    if [ -d "$LAST_BACKUP/chrome" ]; then
+        echo "🔄 Restoring Chrome..."
+        
+        # Detect Chrome installation path
+        CHROME_PATHS=(
+            "$HOME/.config/google-chrome"
+            "$HOME/snap/chromium/common/chromium"
+            "$HOME/.var/app/com.google.Chrome/config/google-chrome"
+        )
+        
+        CHROME_DIR=""
+        for path in "${CHROME_PATHS[@]}"; do
+            if [ -d "$path" ]; then
+                CHROME_DIR="$path"
+                echo "📍 Found Chrome at: $CHROME_DIR"
+                break
+            fi
+        done
+        
+        if [ -z "$CHROME_DIR" ]; then
+            echo "⚠️ Chrome not installed. Please install Chrome first!"
+        else
+            # Close Chrome if running
+            if pgrep -x "chrome" > /dev/null || pgrep -x "google-chrome" > /dev/null; then
+                echo "⚠️ Chrome is running. Please close Chrome and press Enter to continue..."
+                read -r
+            fi
+            
+            # Restore each profile
+            for profile_backup in "$LAST_BACKUP/chrome"/*/; do
+                if [ -d "$profile_backup" ]; then
+                    profile_name=$(basename "$profile_backup")
+                    
+                    # Skip if not a profile directory
+                    if [[ ! "$profile_name" =~ ^(Default|Profile\ [0-9]+)$ ]]; then
+                        continue
+                    fi
+                    
+                    echo "📦 Restoring profile: $profile_name"
+                    PROFILE_DIR="$CHROME_DIR/$profile_name"
+                    mkdir -p "$PROFILE_DIR"
+                    
+                    # Restore Extensions
+                    if [ -f "$profile_backup/Extensions.tar.gz" ]; then
+                        tar -xzf "$profile_backup/Extensions.tar.gz" -C "$PROFILE_DIR"
+                        echo "  ✅ Extensions restored"
+                    fi
+                    
+                    # Restore user data files
+                    for file in "$profile_backup"/*; do
+                        filename=$(basename "$file")
+                        # Skip tar.gz and txt files
+                        if [[ "$filename" != *.tar.gz && "$filename" != *.txt ]]; then
+                            cp "$file" "$PROFILE_DIR/"
+                        fi
+                    done
+                    echo "  ✅ User data restored"
+                    
+                    # Set correct ownership
+                    sudo chown -R "$USER:$USER" "$PROFILE_DIR"
+                done
+            done
+            
+            # Restore Local State
+            if [ -f "$LAST_BACKUP/chrome/Local State" ]; then
+                cp "$LAST_BACKUP/chrome/Local State" "$CHROME_DIR/"
+                sudo chown "$USER:$USER" "$CHROME_DIR/Local State"
+                echo "📦 Local State restored"
+            fi
+            
+            echo "✅ Chrome restore completed!"
+        fi
+    else
+        echo "⚠️ No Chrome backup found"
+    fi
+fi
+
+# --------------------------
+# Restore Brave
+# --------------------------
+if ask_yes_no "Restore Brave (extensions + user data)?"; then
+    if [ -d "$LAST_BACKUP/brave" ]; then
+        echo "🔄 Restoring Brave..."
+        
+        # Detect Brave installation path
+        BRAVE_PATHS=(
+            "$HOME/.config/BraveSoftware/Brave-Browser"
+            "$HOME/snap/brave/current/.config/BraveSoftware/Brave-Browser"
+            "$HOME/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser"
+        )
+        
+        BRAVE_DIR=""
+        for path in "${BRAVE_PATHS[@]}"; do
+            if [ -d "$path" ]; then
+                BRAVE_DIR="$path"
+                echo "📍 Found Brave at: $BRAVE_DIR"
+                break
+            fi
+        done
+        
+        if [ -z "$BRAVE_DIR" ]; then
+            echo "⚠️ Brave not installed. Please install Brave first!"
+        else
+            # Close Brave if running
+            if pgrep -x "brave" > /dev/null || pgrep -x "brave-browser" > /dev/null; then
+                echo "⚠️ Brave is running. Please close Brave and press Enter to continue..."
+                read -r
+            fi
+            
+            # Restore each profile
+            for profile_backup in "$LAST_BACKUP/brave"/*/; do
+                if [ -d "$profile_backup" ]; then
+                    profile_name=$(basename "$profile_backup")
+                    
+                    # Skip if not a profile directory
+                    if [[ ! "$profile_name" =~ ^(Default|Profile\ [0-9]+)$ ]]; then
+                        continue
+                    fi
+                    
+                    echo "📦 Restoring profile: $profile_name"
+                    PROFILE_DIR="$BRAVE_DIR/$profile_name"
+                    mkdir -p "$PROFILE_DIR"
+                    
+                    # Restore Extensions
+                    if [ -f "$profile_backup/Extensions.tar.gz" ]; then
+                        tar -xzf "$profile_backup/Extensions.tar.gz" -C "$PROFILE_DIR"
+                        echo "  ✅ Extensions restored"
+                    fi
+                    
+                    # Restore user data files
+                    for file in "$profile_backup"/*; do
+                        filename=$(basename "$file")
+                        # Skip tar.gz and txt files
+                        if [[ "$filename" != *.tar.gz && "$filename" != *.txt ]]; then
+                            cp "$file" "$PROFILE_DIR/"
+                        fi
+                    done
+                    echo "  ✅ User data restored"
+                    
+                    # Set correct ownership
+                    sudo chown -R "$USER:$USER" "$PROFILE_DIR"
+                done
+            done
+            
+            # Restore Local State
+            if [ -f "$LAST_BACKUP/brave/Local State" ]; then
+                cp "$LAST_BACKUP/brave/Local State" "$BRAVE_DIR/"
+                sudo chown "$USER:$USER" "$BRAVE_DIR/Local State"
+                echo "📦 Local State restored"
+            fi
+            
+            echo "✅ Brave restore completed!"
+        fi
+    else
+        echo "⚠️ No Brave backup found"
     fi
 fi
 
@@ -446,30 +649,31 @@ fi
 # --------------------------
 # 6. Restore XAMPP config
 # --------------------------
-if ask_yes_no "Restore XAMPP config?"; then
-if [ -d "$LAST_BACKUP/xampp" ]; then
-    echo "🔧 Restoring XAMPP config..."
-    sudo tar -xzf "$LAST_BACKUP/xampp/etc.tar.gz" -C /opt/lampp/
-    echo "   ➤ XAMPP config restored"
-fi
-fi
+#if ask_yes_no "Restore XAMPP config?"; then
+#if [ -d "$LAST_BACKUP/xampp" ]; then
+#    echo "🔧 Restoring XAMPP config..."
+#    sudo tar -xzf "$LAST_BACKUP/xampp/etc.tar.gz" -C /opt/lampp/
+#    echo "   ➤ XAMPP config restored"
+#fi
+#fi
 
 # ------------------------------------------
 # Restore command folder
 # ------------------------------------------
 if ask_yes_no "Restore command folder?"; then
-if [ -d "$LAST_BACKUP/command" ]; then
-    echo "📦 Restoring command folder from backup..."
-    mkdir -p "$HOME/command"
-    cp -r "$LAST_BACKUP/command/"* "$HOME/command/"
-    echo "✅ Command folder restored at $HOME/command"
+    if [ -d "$LAST_BACKUP/command" ]; then
+        echo "📦 Restoring command folder from backup..."
+        mkdir -p "$HOME/command"
+        cp -r "$LAST_BACKUP/command/"* "$HOME/command/"
+        echo "✅ Command folder restored at $HOME/command"
 
-    sudo chmod +x "$HOME/command/start"
-    echo "✅ Command start script made executable"
-
-    sudo chown shagor:shagor "$HOME/command/start"
-    echo "✅ Command start script ownership set"
-fi
+        # Make start script executable if it exists
+        if [ -f "$HOME/command/start" ]; then
+            sudo chmod +x "$HOME/command/start"
+            sudo chown "$USER:$USER" "$HOME/command/start"
+            echo "✅ Command start script made executable and ownership set"
+        fi
+    fi
 fi
 
 echo "🎯 Restore completed successfully."
