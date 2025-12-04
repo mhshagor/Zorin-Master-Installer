@@ -18,10 +18,11 @@ echo "🔄 Backup started..."
 echo "📂 Backup directory: $BACKUP_DIR"
 
 ask_yes_no() {
-    local question="$1"
-    read -p "$question [y/N]: " choice
-    choice=${choice,,}  # lowercase
-    [[ "$choice" == "y" || "$choice" == "yes" ]]
+    echo "Debug: Function called"
+    #local question="$1"
+    #read -p "$question [y/N]: " choice
+    #choice=${choice,,}  # lowercase
+    #[[ "$choice" == "y" || "$choice" == "yes" ]]
 }
 
 # Check if pv (Pipe Viewer) is installed for progress bars
@@ -35,6 +36,8 @@ if ask_yes_no "Do you want to backup?"; then
     # -------------------------------
     # Detect config & extension paths
     # -------------------------------
+
+    echo "🔍 Detecting application configurations and extensions..."
     detect_paths() {
         local app="$1"
         local conf="" ext=""
@@ -117,7 +120,7 @@ if ask_yes_no "Do you want to backup?"; then
     # -------------------------------
     # Backup apps
     # -------------------------------
-    for app in ulauncher vscode windsurf extension-manager antigravity; do
+    for app in ulauncher vscode windsurf extension-manager gnome-extensions antigravity; do
             paths=$(detect_paths "$app")
             conf="${paths%%|*}"
             ext="${paths##*|}"
@@ -244,160 +247,160 @@ EOF
     # -------------------------------
     # MySQL Database Backup (All Databases)
     # -------------------------------
-    if ask_yes_no "Do you want to backup MySQL databases?"; then
-        echo "🟢 MySQL database backup started..."
-        MYSQL_BACKUP_DIR="$BACKUP_DIR/mysql"
-        mkdir -p "$MYSQL_BACKUP_DIR"
-        
-        # Check if MySQL is running
-        if ! sudo /opt/lampp/lampp status | grep -q "MySQL.*running"; then
-            echo "⚠️ MySQL is not running. Starting MySQL..."
-            sudo /opt/lampp/lampp startmysql
-            sleep 3
-        fi
-        
-        # Get MySQL root password
-        echo ""
-        echo "📝 Enter MySQL root password (press Enter if no password):"
-        read -s MYSQL_PASSWORD
-        
-        if [ -z "$MYSQL_PASSWORD" ]; then
-            MYSQL_CMD="/opt/lampp/bin/mysql -u root"
-            MYSQLDUMP_CMD="/opt/lampp/bin/mysqldump -u root"
-        else
-            MYSQL_CMD="/opt/lampp/bin/mysql -u root -p$MYSQL_PASSWORD"
-            MYSQLDUMP_CMD="/opt/lampp/bin/mysqldump -u root -p$MYSQL_PASSWORD"
-        fi
-        
-        # Test MySQL connection
-        if ! $MYSQL_CMD -e "SELECT 1;" > /dev/null 2>&1; then
-            echo "❌ Failed to connect to MySQL. Please check your password."
-        else
-            echo "✅ MySQL connection successful"
-            
-            # Get list of databases (excluding system databases)
-            DATABASES=$($MYSQL_CMD -e "SHOW DATABASES;" | grep -Ev "^(Database|information_schema|performance_schema|mysql|sys|phpmyadmin)$")
-            
-            if [ -z "$DATABASES" ]; then
-                echo "⚠️ No user databases found"
-            else
-                echo "📦 Found databases to backup:"
-                echo "$DATABASES" | sed 's/^/   - /'
-                
-                # Save database list
-                echo "$DATABASES" > "$MYSQL_BACKUP_DIR/databases_list.txt"
-                
-                # Backup each database individually
-                for DB in $DATABASES; do
-                    echo "📦 Backing up database: $DB"
-                    $MYSQLDUMP_CMD --databases "$DB" --add-drop-database --routines --triggers --events \
-                        > "$MYSQL_BACKUP_DIR/${DB}.sql" 2>/dev/null
-                    
-                    if [ $? -eq 0 ]; then
-                        # Compress the SQL file
-                        gzip "$MYSQL_BACKUP_DIR/${DB}.sql"
-                        echo "  ✅ $DB backed up and compressed"
-                    else
-                        echo "  ⚠️ Failed to backup $DB"
-                    fi
-                done
-                
-                # Create a combined backup of all databases
-                echo "📦 Creating combined backup of all databases..."
-                
-                $MYSQLDUMP_CMD --all-databases --add-drop-database --routines --triggers --events \
-                    > "$MYSQL_BACKUP_DIR/all_databases.sql" 2>/dev/null
-                
-                if [ $? -eq 0 ]; then
-                    # Check SQL file size for progress decision
-                    SQL_SIZE=$(stat -c%s "$MYSQL_BACKUP_DIR/all_databases.sql")
-                    SQL_SIZE_MB=$((SQL_SIZE / 1024 / 1024))
-                    
-                    # Use progress bar only for large SQL files (>10MB, likely >5 seconds)
-                    if [ "$SQL_SIZE_MB" -gt 10 ] && command -v pv > /dev/null 2>&1; then
-                        echo "⏳ Large database (${SQL_SIZE_MB}MB), compressing with progress..."
-                        pv -s "$SQL_SIZE" -p -t -e -r -b "$MYSQL_BACKUP_DIR/all_databases.sql" | gzip > "$MYSQL_BACKUP_DIR/all_databases.sql.gz"
-                        rm "$MYSQL_BACKUP_DIR/all_databases.sql"
-                    else
-                        # Quick compression without progress bar
-                        gzip "$MYSQL_BACKUP_DIR/all_databases.sql"
-                    fi
-                    echo "✅ Combined backup created and compressed"
-                fi
-                
-                # Create restore instructions
-                cat > "$MYSQL_BACKUP_DIR/README.txt" << 'EOF'
-MySQL Database Backup Information
-==================================
-
-This backup includes:
-- Individual database dumps (database_name.sql.gz)
-- Combined backup of all databases (all_databases.sql.gz)
-- List of all databases (databases_list.txt)
-
-To restore:
-
-Option 1: Restore all databases at once
-----------------------------------------
-1. Start MySQL: sudo /opt/lampp/lampp startmysql
-2. Decompress: gunzip all_databases.sql.gz
-3. Import: /opt/lampp/bin/mysql -u root -p < all_databases.sql
-
-Option 2: Restore individual database
---------------------------------------
-1. Start MySQL: sudo /opt/lampp/lampp startmysql
-2. Decompress: gunzip database_name.sql.gz
-3. Import: /opt/lampp/bin/mysql -u root -p < database_name.sql
-
-Option 3: Restore specific database with new name
---------------------------------------------------
-1. Decompress: gunzip database_name.sql.gz
-2. Create DB: /opt/lampp/bin/mysql -u root -p -e "CREATE DATABASE new_name;"
-3. Import: /opt/lampp/bin/mysql -u root -p new_name < database_name.sql
-
-Important Notes:
-- All databases include structure, data, triggers, routines, and events
-- Backups are compressed with gzip to save space
-- Always test restore on a development environment first
-EOF
-                
-                echo "📄 README created with restore instructions"
-                
-                # Calculate total backup size
-                TOTAL_SIZE=$(du -sh "$MYSQL_BACKUP_DIR" | cut -f1)
-                echo "💾 Total MySQL backup size: $TOTAL_SIZE"
-                echo "✅ MySQL backup completed successfully!"
-            fi
-        fi
-    fi
-    
-    # -------------------------------
-    # GNOME Extensions Backup (user + system)
-    # -------------------------------
-
-    if ask_yes_no "Do you want to backup GNOME Extensions?"; then
-        echo "🟢 GNOME Extensions backup started..."
-        GNOME_BACKUP_DIR="$BACKUP_DIR/gnome-extensions"
-        mkdir -p "$GNOME_BACKUP_DIR"
-
-        USER_EXT_DIR="$HOME/.local/share/gnome-shell/extensions"
-        SYS_EXT_DIR="/usr/share/gnome-shell/extensions"
-
-        if [ -d "$USER_EXT_DIR" ]; then
-            tar -czf "$GNOME_BACKUP_DIR/user-extensions.tar.gz" -C "$USER_EXT_DIR" .
-            echo "📦 User GNOME extensions backed up."
-        fi
-
-        if [ -d "$SYS_EXT_DIR" ]; then
-            sudo tar -czf "$GNOME_BACKUP_DIR/system-extensions.tar.gz" -C "$SYS_EXT_DIR" .
-            echo "📦 System GNOME extensions backed up."
-        fi
-
-        if command -v gnome-extensions >/dev/null 2>&1; then
-            gnome-extensions list > "$GNOME_BACKUP_DIR/extensions_list.txt"
-            echo "📃 GNOME extensions list created."
-        fi
-    fi
+#    if ask_yes_no "Do you want to backup MySQL databases?"; then
+#        echo "🟢 MySQL database backup started..."
+#        MYSQL_BACKUP_DIR="$BACKUP_DIR/mysql"
+#        mkdir -p "$MYSQL_BACKUP_DIR"
+#        
+#        # Check if MySQL is running
+#        if ! sudo /opt/lampp/lampp status | grep -q "MySQL.*running"; then
+#            echo "⚠️ MySQL is not running. Starting MySQL..."
+#            sudo /opt/lampp/lampp startmysql
+#            sleep 3
+#        fi
+#        
+#        # Get MySQL root password
+#        echo ""
+#        echo "📝 Enter MySQL root password (press Enter if no password):"
+#        read -s MYSQL_PASSWORD
+#        
+#        if [ -z "$MYSQL_PASSWORD" ]; then
+#            MYSQL_CMD="/opt/lampp/bin/mysql -u root"
+#            MYSQLDUMP_CMD="/opt/lampp/bin/mysqldump -u root"
+#        else
+#            MYSQL_CMD="/opt/lampp/bin/mysql -u root -p$MYSQL_PASSWORD"
+#            MYSQLDUMP_CMD="/opt/lampp/bin/mysqldump -u root -p$MYSQL_PASSWORD"
+#        fi
+#        
+#        # Test MySQL connection
+#        if ! $MYSQL_CMD -e "SELECT 1;" > /dev/null 2>&1; then
+#            echo "❌ Failed to connect to MySQL. Please check your password."
+#        else
+#            echo "✅ MySQL connection successful"
+#            
+#            # Get list of databases (excluding system databases)
+#            DATABASES=$($MYSQL_CMD -e "SHOW DATABASES;" | grep -Ev #"^(Database|information_schema|performance_schema|mysql|sys|phpmyadm#in)$")
+#            
+#            if [ -z "$DATABASES" ]; then
+#                echo "⚠️ No user databases found"
+#            else
+#                echo "📦 Found databases to backup:"
+#                echo "$DATABASES" | sed 's/^/   - /'
+#                
+#                # Save database list
+#                echo "$DATABASES" > "$MYSQL_BACKUP_DIR/databases_list.txt"
+#                
+#                # Backup each database individually
+#                for DB in $DATABASES; do
+#                    echo "📦 Backing up database: $DB"
+#                    $MYSQLDUMP_CMD --databases "$DB" --add-drop-database --routines -#-triggers --events \
+#                        > "$MYSQL_BACKUP_DIR/${DB}.sql" 2>/dev/null
+#                    
+#                    if [ $? -eq 0 ]; then
+#                        # Compress the SQL file
+#                        gzip "$MYSQL_BACKUP_DIR/${DB}.sql"
+#                        echo "  ✅ $DB backed up and compressed"
+#                    else
+#                        echo "  ⚠️ Failed to backup $DB"
+#                    fi
+#                done
+#                
+#                # Create a combined backup of all databases
+#                echo "📦 Creating combined backup of all databases..."
+#                
+#                $MYSQLDUMP_CMD --all-databases --add-drop-database --routines --#triggers --events \
+#                    > "$MYSQL_BACKUP_DIR/all_databases.sql" 2>/dev/null
+#                
+#                if [ $? -eq 0 ]; then
+#                    # Check SQL file size for progress decision
+#                    SQL_SIZE=$(stat -c%s "$MYSQL_BACKUP_DIR/all_databases.sql")
+#                    SQL_SIZE_MB=$((SQL_SIZE / 1024 / 1024))
+#                    
+#                    # Use progress bar only for large SQL files (>10MB, likely >5 #seconds)
+#                    if [ "$SQL_SIZE_MB" -gt 10 ] && command -v pv > /dev/null 2>&1; #then
+#                        echo "⏳ Large database (${SQL_SIZE_MB}MB), compressing with #progress..."
+#                        pv -s "$SQL_SIZE" -p -t -e -r -b #"$MYSQL_BACKUP_DIR/all_databases.sql" | gzip > #"$MYSQL_BACKUP_DIR/all_databases.sql.gz"
+#                        rm "$MYSQL_BACKUP_DIR/all_databases.sql"
+#                    else
+#                        # Quick compression without progress bar
+#                        gzip "$MYSQL_BACKUP_DIR/all_databases.sql"
+#                    fi
+#                    echo "✅ Combined backup created and compressed"
+#                fi
+#                
+#                # Create restore instructions
+#                cat > "$MYSQL_BACKUP_DIR/README.txt" << 'EOF'
+#MySQL Database Backup Information
+#==================================
+#
+#This backup includes:
+#- Individual database dumps (database_name.sql.gz)
+#- Combined backup of all databases (all_databases.sql.gz)
+#- List of all databases (databases_list.txt)
+#
+#To restore:
+#
+#Option 1: Restore all databases at once
+#----------------------------------------
+#1. Start MySQL: sudo /opt/lampp/lampp startmysql
+#2. Decompress: gunzip all_databases.sql.gz
+#3. Import: /opt/lampp/bin/mysql -u root -p < all_databases.sql
+#
+#Option 2: Restore individual database
+#--------------------------------------
+#1. Start MySQL: sudo /opt/lampp/lampp startmysql
+#2. Decompress: gunzip database_name.sql.gz
+#3. Import: /opt/lampp/bin/mysql -u root -p < database_name.sql
+#
+#Option 3: Restore specific database with new name
+#--------------------------------------------------
+#1. Decompress: gunzip database_name.sql.gz
+#2. Create DB: /opt/lampp/bin/mysql -u root -p -e "CREATE DATABASE new_name;"
+#3. Import: /opt/lampp/bin/mysql -u root -p new_name < database_name.sql
+#
+#Important Notes:
+#- All databases include structure, data, triggers, routines, and events
+#- Backups are compressed with gzip to save space
+#- Always test restore on a development environment first
+#EOF
+#                
+#                echo "📄 README created with restore instructions"
+#                
+#                # Calculate total backup size
+#                TOTAL_SIZE=$(du -sh "$MYSQL_BACKUP_DIR" | cut -f1)
+#                echo "💾 Total MySQL backup size: $TOTAL_SIZE"
+#                echo "✅ MySQL backup completed successfully!"
+#            fi
+#        fi
+#    fi
+#    
+#    # -------------------------------
+#    # GNOME Extensions Backup (user + system)
+#    # -------------------------------
+#
+#    if ask_yes_no "Do you want to backup GNOME Extensions?"; then
+#        echo "🟢 GNOME Extensions backup started..."
+#        GNOME_BACKUP_DIR="$BACKUP_DIR/gnome-extensions"
+#        mkdir -p "$GNOME_BACKUP_DIR"
+#
+#        USER_EXT_DIR="$HOME/.local/share/gnome-shell/extensions"
+#        SYS_EXT_DIR="/usr/share/gnome-shell/extensions"
+#
+#        if [ -d "$USER_EXT_DIR" ]; then
+#            tar -czf "$GNOME_BACKUP_DIR/user-extensions.tar.gz" -C "$USER_EXT_DIR" .
+#            echo "📦 User GNOME extensions backed up."
+#        fi
+#
+#        if [ -d "$SYS_EXT_DIR" ]; then
+#            sudo tar -czf "$GNOME_BACKUP_DIR/system-extensions.tar.gz" -C #"$SYS_EXT_DIR" .
+#            echo "📦 System GNOME extensions backed up."
+#        fi
+#
+#        if command -v gnome-extensions >/dev/null 2>&1; then
+#            gnome-extensions list > "$GNOME_BACKUP_DIR/extensions_list.txt"
+#            echo "📃 GNOME extensions list created."
+#        fi
+#    fi
     
     # -------------------------------
     # Chrome Backup (Extensions + User Data)

@@ -1,0 +1,3 @@
+please run ............
+echo 'export PATH=$PATH:/home/shagor/command' >> ~/.bashrc
+source ~/.bashrc

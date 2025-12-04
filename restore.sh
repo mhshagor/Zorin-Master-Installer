@@ -30,8 +30,9 @@ else
 fi
 
 ask_yes_no() {
+#echo "Debug: Function called"
     local question="$1"
-    read -p "$question [y/N]: " choice
+    read -p "$question [Y/N]: " choice
     choice=${choice,,}  # lowercase
     [[ "$choice" == "y" || "$choice" == "yes" ]]
 }
@@ -42,14 +43,14 @@ if ask_yes_no "Do you want to restore from backup?"; then
 # 1. System Update
 # ------------------------------------------
 echo "Updating system packages..."
-sudo apt update -y
-sudo apt upgrade -y
+#sudo apt update -y
+#sudo apt upgrade -y
 
 # ------------------------------------------
 # 2. Install Basic Tools
 # ------------------------------------------
 echo "Installing essential tools..."
-sudo apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsof flatpak
+#sudo apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsof flatpak
 
 # ------------------------------------------
 # 3. XAMPP
@@ -537,7 +538,7 @@ if ask_yes_no "Restore Chrome (extensions + user data)?"; then
                     
                     # Set correct ownership
                     sudo chown -R "$USER:$USER" "$PROFILE_DIR"
-                done
+                fi
             done
             
             # Restore Local State
@@ -618,7 +619,7 @@ if ask_yes_no "Restore Brave (extensions + user data)?"; then
                     
                     # Set correct ownership
                     sudo chown -R "$USER:$USER" "$PROFILE_DIR"
-                done
+                fi
             done
             
             # Restore Local State
@@ -849,7 +850,10 @@ sudo apt clean
 echo -e "\n🎉 Zorin Master Setup v5.3 Completed!"
 echo -e "Log: $LOG_FILE"
 echo -e "Restart terminal or run: source ~/.bashrc"
-
+echo 'export PATH=/opt/lampp/bin:$PATH' >> ~/.bashrc 
+echo source ~/.bashrc
+echo 'export PATH=$PATH:/home/shagor/command' >> ~/.bashrc
+source ~/.bashrc
 else
     echo "ℹ️ Restore skipped by user."
 fi
